@@ -60,3 +60,23 @@ fastlane/report.xml
 fastlane/Preview.html
 fastlane/screenshots/**/*.png
 fastlane/test_output
+
+# Keep all folders that are not explicitly listed
+# This pattern ignores everything except the main project folders
+# Add specific patterns below for files/folders you want to ignore
+
+# Ignore .DS_Store files
+.DS_Store
+**/.DS_Store
+
+# Ignore temporary files
+*.tmp
+*.temp
+*~
+
+# Ignore log files
+*.log
+
+# Ignore backup files
+*.bak
+*.backup
