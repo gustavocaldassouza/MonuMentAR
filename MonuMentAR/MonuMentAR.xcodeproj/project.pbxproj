@@ -286,7 +286,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = A53S72FUUL;
 				ENABLE_PREVIEWS = YES;
-				EXCLUDED_SOURCE_FILE_NAMES = ".gitkeep";
+				EXCLUDED_SOURCE_FILE_NAMES = .gitkeep;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Use camera for AR monument recognition.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Access location to display nearby Montreal monuments in AR.";
@@ -323,7 +323,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = A53S72FUUL;
 				ENABLE_PREVIEWS = YES;
-				EXCLUDED_SOURCE_FILE_NAMES = ".gitkeep";
+				EXCLUDED_SOURCE_FILE_NAMES = .gitkeep;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Use camera for AR monument recognition.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Access location to display nearby Montreal monuments in AR.";
