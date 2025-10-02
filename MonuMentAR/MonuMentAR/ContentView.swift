@@ -92,7 +92,7 @@ struct ContentView: View {
                     
                     FeatureRow(icon: "camera.fill", text: "Real-time camera analysis")
                     FeatureRow(icon: "target", text: "5 major Montreal landmarks")
-                    FeatureRow(icon: "checkmark.circle.fill", text: "85% confidence threshold")
+                    FeatureRow(icon: "checkmark.circle.fill", text: "75% confidence threshold")
                     FeatureRow(icon: "rectangle.and.arrow.up.right.and.arrow.down.left", text: "Visual AR overlays")
                 }
                 .padding(.horizontal, 30)

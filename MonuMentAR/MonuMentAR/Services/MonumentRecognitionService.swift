@@ -9,44 +9,79 @@ import Combine
 class MonumentRecognitionService: ObservableObject {
     @Published var detectedLandmarks: [DetectedLandmark] = []
     @Published var isAnalyzing = false
+    @Published var modelStatus: ModelStatus = .notLoaded
     
-    private let confidenceThreshold: Float = 0.85
+    private let confidenceThreshold: Float = 0.75  // Lowered for better detection
     private var visionRequests: [VNRequest] = []
-    
-    // For this implementation, we'll use a generic image classification model
-    // In a real app, you would train a custom Core ML model specifically for Montreal landmarks
     private var coreMLModel: VNCoreMLModel?
+    
+    // Temporal smoothing for stable detections
+    private var recentDetections: [String: [Float]] = [:]
+    private let smoothingWindowSize = 3
+    
+    enum ModelStatus {
+        case notLoaded
+        case loading
+        case loaded
+        case error(String)
+    }
     
     init() {
         setupVisionRequests()
     }
     
     private func setupVisionRequests() {
-        // For demonstration, we'll use a generic image classification
-        // In production, you would load a custom trained model for Montreal landmarks
-        guard let model = createGenericModel(),
-              let coreMLModel = try? VNCoreMLModel(for: model) else {
-            print("No Core ML model available - using mock detection")
+        modelStatus = .loading
+        
+        guard let model = createGenericModel() else {
+            modelStatus = .error("Model file not found")
+            print("❌ No Core ML model available - using mock detection")
             return
         }
         
-        let classificationRequest = VNCoreMLRequest(model: coreMLModel) { [weak self] request, error in
-            self?.handleClassificationResults(request: request, error: error)
+        do {
+            let coreMLModel = try VNCoreMLModel(for: model)
+            self.coreMLModel = coreMLModel
+            
+            let classificationRequest = VNCoreMLRequest(model: coreMLModel) { [weak self] request, error in
+                Task { @MainActor in
+                    self?.handleClassificationResults(request: request, error: error)
+                }
+            }
+            
+            classificationRequest.imageCropAndScaleOption = .centerCrop
+            visionRequests = [classificationRequest]
+            modelStatus = .loaded
+            
+            print("✅ Vision requests configured successfully")
+            
+        } catch {
+            modelStatus = .error("Failed to create VNCoreMLModel: \(error.localizedDescription)")
+            print("❌ Error creating VNCoreMLModel: \(error)")
         }
-        
-        classificationRequest.imageCropAndScaleOption = .centerCrop
-        visionRequests = [classificationRequest]
     }
     
-    // Placeholder for creating a generic model - in production, use a trained model
+    // Load the trained Core ML model for Montreal monuments
     private func createGenericModel() -> MLModel? {
-        // This is a placeholder. In a real implementation, you would:
-        // 1. Train a custom Core ML model on images of Montreal landmarks
-        // 2. Add the .mlmodel file to your project bundle
-        // 3. Load it using MLModel(contentsOf:)
+        // Try to load the custom Montreal monuments model
+        guard let modelURL = Bundle.main.url(forResource: "MontrealMonuments", withExtension: "mlmodel") else {
+            print("⚠️ MontrealMonuments.mlmodel not found in bundle")
+            print("📝 To add the model:")
+            print("   1. Train the model using ML_Training/train_monument_model.py")
+            print("   2. Drag MontrealMonuments.mlmodel into your Xcode project")
+            print("   3. Ensure it's added to your app target")
+            return nil
+        }
         
-        // For now, we'll return nil and use mock detection
-        return nil
+        do {
+            let model = try MLModel(contentsOf: modelURL)
+            print("✅ Successfully loaded MontrealMonuments.mlmodel")
+            return model
+        } catch {
+            print("❌ Error loading Core ML model: \(error.localizedDescription)")
+            print("💡 Make sure the model file is valid and compatible with this iOS version")
+            return nil
+        }
     }
     
     func analyzeImage(_ image: UIImage) {
@@ -83,26 +118,61 @@ class MonumentRecognitionService: ObservableObject {
         
         guard error == nil,
               let observations = request.results as? [VNClassificationObservation] else {
-            print("Error in classification: \(error?.localizedDescription ?? "Unknown error")")
+            print("❌ Error in classification: \(error?.localizedDescription ?? "Unknown error")")
             return
         }
         
-        // Filter results by confidence threshold
-        let highConfidenceObservations = observations.filter { $0.confidence >= confidenceThreshold }
-        
-        // Convert to detected landmarks
-        let newDetections = highConfidenceObservations.compactMap { observation -> DetectedLandmark? in
-            guard let landmark = findLandmarkByIdentifier(observation.identifier) else { return nil }
+        // Convert to detected landmarks with temporal smoothing, excluding background class
+        let newDetections = observations.compactMap { observation -> DetectedLandmark? in
+            // Skip background class
+            guard observation.identifier != "background",
+                  let landmark = findLandmarkByIdentifier(observation.identifier) else { 
+                return nil 
+            }
+            
+            // Apply temporal smoothing to this observation's confidence
+            let smoothedConfidence = applyTemporalSmoothing(for: observation.identifier, confidence: observation.confidence)
+            
+            // Filter by confidence threshold after smoothing
+            guard smoothedConfidence >= confidenceThreshold else {
+                return nil
+            }
             
             return DetectedLandmark(
                 landmark: landmark,
-                confidence: observation.confidence,
-                boundingBox: CGRect.zero // Would be set by object detection model
+                confidence: smoothedConfidence,
+                boundingBox: CGRect(x: 0.1, y: 0.1, width: 0.8, height: 0.8) // Placeholder bounding box
             )
         }
         
         // Update detected landmarks
         detectedLandmarks = newDetections
+        
+        // Log detection for debugging
+        if !newDetections.isEmpty {
+            let detectionNames = newDetections.map { "\($0.landmark.name) (\(Int($0.confidence * 100))%)" }
+            print("🏛️ Detected: \(detectionNames.joined(separator: ", "))")
+        }
+    }
+    
+    private func applyTemporalSmoothing(for identifier: String, confidence: Float) -> Float {
+        // Add current confidence to recent detections
+        if recentDetections[identifier] == nil {
+            recentDetections[identifier] = []
+        }
+        recentDetections[identifier]?.append(confidence)
+        
+        // Keep only recent detections within window
+        if let detections = recentDetections[identifier], detections.count > smoothingWindowSize {
+            recentDetections[identifier] = Array(detections.suffix(smoothingWindowSize))
+        }
+        
+        // Calculate smoothed confidence
+        if let detections = recentDetections[identifier], !detections.isEmpty {
+            return detections.reduce(0, +) / Float(detections.count)
+        }
+        
+        return confidence
     }
     
     private func findLandmarkByIdentifier(_ identifier: String) -> MontrealLandmark? {
