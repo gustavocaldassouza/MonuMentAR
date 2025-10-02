@@ -10,7 +10,12 @@ struct MontrealLandmark: Identifiable, Codable {
     let architecturalStyle: String
     let yearBuilt: String
     
-    // Core ML model identifier for recognition
+    // GPS-based detection properties
+    let height: Double // Height above ground level in meters
+    let footprintRadius: Double // Approximate radius of the landmark in meters
+    let elevationAboveSeaLevel: Double // Elevation in meters above sea level
+    
+    // Core ML model identifier for recognition (legacy)
     let modelIdentifier: String
     
     static let landmarks: [MontrealLandmark] = [
@@ -21,6 +26,9 @@ struct MontrealLandmark: Identifiable, Codable {
             historicalInfo: "Built between 1824-1829, this basilica is a masterpiece of Gothic Revival architecture and one of Montreal's most iconic landmarks.",
             architecturalStyle: "Gothic Revival",
             yearBuilt: "1829",
+            height: 69.0, // Twin towers height
+            footprintRadius: 50.0, // Approximate building footprint
+            elevationAboveSeaLevel: 20.0, // Old Montreal elevation
             modelIdentifier: "notre_dame_basilica"
         ),
         MontrealLandmark(
@@ -30,6 +38,9 @@ struct MontrealLandmark: Identifiable, Codable {
             historicalInfo: "Built for the 1976 Summer Olympics, the stadium features the world's tallest inclined tower at 165 meters.",
             architecturalStyle: "Modernist",
             yearBuilt: "1976",
+            height: 165.0, // Tower height
+            footprintRadius: 200.0, // Large stadium complex
+            elevationAboveSeaLevel: 35.0, // East Montreal elevation
             modelIdentifier: "olympic_stadium_tower"
         ),
         MontrealLandmark(
@@ -39,6 +50,9 @@ struct MontrealLandmark: Identifiable, Codable {
             historicalInfo: "The current cross was erected in 1924 and is illuminated at night, serving as a symbol of Montreal's Catholic heritage.",
             architecturalStyle: "Neo-Gothic",
             yearBuilt: "1924",
+            height: 31.4, // Cross height
+            footprintRadius: 10.0, // Small footprint
+            elevationAboveSeaLevel: 233.0, // Mount Royal summit elevation
             modelIdentifier: "mount_royal_cross"
         ),
         MontrealLandmark(
@@ -48,6 +62,9 @@ struct MontrealLandmark: Identifiable, Codable {
             historicalInfo: "Built in 1922, this clock tower is part of the Old Port's heritage and offers panoramic views of the St. Lawrence River.",
             architecturalStyle: "Beaux-Arts",
             yearBuilt: "1922",
+            height: 45.0, // Tower height
+            footprintRadius: 15.0, // Tower base
+            elevationAboveSeaLevel: 15.0, // Port level elevation
             modelIdentifier: "old_port_clock_tower"
         ),
         MontrealLandmark(
@@ -57,7 +74,22 @@ struct MontrealLandmark: Identifiable, Codable {
             historicalInfo: "Construction began in 1904 and was completed in 1967. It's the largest church in Canada and a major Catholic pilgrimage site.",
             architecturalStyle: "Italian Renaissance",
             yearBuilt: "1967",
+            height: 97.0, // Dome height
+            footprintRadius: 80.0, // Large basilica complex
+            elevationAboveSeaLevel: 165.0, // Westmount elevation
             modelIdentifier: "saint_josephs_oratory"
+        ),
+        MontrealLandmark(
+            name: "Collège de La Salle",
+            description: "Historic educational institution founded by the Christian Brothers",
+            coordinates: CLLocationCoordinate2D(latitude: 45.4267, longitude: -73.6567), // Lachine area
+            historicalInfo: "Founded by the Christian Brothers (Frères des Écoles chrétiennes), this institution has been providing education in Montreal for over a century, continuing the educational mission of Saint John Baptist de La Salle.",
+            architecturalStyle: "Institutional Modern",
+            yearBuilt: "1888",
+            height: 25.0, // Typical institutional building height
+            footprintRadius: 100.0, // Large educational complex
+            elevationAboveSeaLevel: 30.0, // Lachine area elevation
+            modelIdentifier: "college_la_salle"
         )
     ]
 }

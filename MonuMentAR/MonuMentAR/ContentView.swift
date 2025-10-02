@@ -11,6 +11,7 @@ import RealityKit
 struct ContentView: View {
     @State private var showARView = false
     @State private var showLandmarkList = false
+    @State private var showGPSTest = false
     
     var body: some View {
         NavigationView {
@@ -79,6 +80,28 @@ struct ContentView: View {
                                 .stroke(Color.blue, lineWidth: 2)
                         )
                     }
+                    
+                    // GPS Test Button
+                    Button(action: {
+                        showGPSTest = true
+                    }) {
+                        HStack {
+                            Image(systemName: "location.magnifyingglass")
+                                .font(.title2)
+                            Text("Test GPS Detection")
+                                .font(.headline)
+                                .fontWeight(.semibold)
+                        }
+                        .foregroundColor(.green)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.green.opacity(0.1))
+                        .cornerRadius(15)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 15)
+                                .stroke(Color.green, lineWidth: 2)
+                        )
+                    }
                 }
                 .padding(.horizontal, 30)
                 
@@ -90,10 +113,11 @@ struct ContentView: View {
                         .font(.headline)
                         .fontWeight(.semibold)
                     
-                    FeatureRow(icon: "camera.fill", text: "Real-time camera analysis")
+                    FeatureRow(icon: "location.fill", text: "GPS-based monument detection")
+                    FeatureRow(icon: "gyroscope", text: "Motion sensor orientation tracking")
                     FeatureRow(icon: "target", text: "5 major Montreal landmarks")
-                    FeatureRow(icon: "checkmark.circle.fill", text: "75% confidence threshold")
-                    FeatureRow(icon: "rectangle.and.arrow.up.right.and.arrow.down.left", text: "Visual AR overlays")
+                    FeatureRow(icon: "mappin.and.ellipse", text: "AR geo-anchored overlays")
+                    FeatureRow(icon: "bolt.fill", text: "Instant recognition (no ML required)")
                 }
                 .padding(.horizontal, 30)
                 .padding(.bottom, 50)
@@ -105,6 +129,9 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showLandmarkList) {
             LandmarkListView()
+        }
+        .sheet(isPresented: $showGPSTest) {
+            GPSTestView()
         }
     }
 }

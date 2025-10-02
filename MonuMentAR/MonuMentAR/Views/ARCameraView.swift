@@ -2,9 +2,11 @@ import SwiftUI
 import ARKit
 import RealityKit
 import AVFoundation
+import CoreLocation
+import CoreMotion
 
 struct ARCameraView: UIViewRepresentable {
-    @ObservedObject var recognitionService: MonumentRecognitionService
+    @ObservedObject var gpsDetectionService: GPSBasedDetectionService
     @Binding var isSessionRunning: Bool
     
     func makeUIView(context: Context) -> ARSCNView {
@@ -12,14 +14,28 @@ struct ARCameraView: UIViewRepresentable {
         arView.delegate = context.coordinator
         arView.session.delegate = context.coordinator
         
-        // Configure AR session
-        let configuration = ARWorldTrackingConfiguration()
-        configuration.planeDetection = [.horizontal, .vertical]
-        configuration.environmentTexturing = .automatic
+        // Enable camera feed display
+        arView.automaticallyUpdatesLighting = true
+        arView.showsStatistics = false
         
-        arView.session.run(configuration)
+        print("🎥 Setting up AR camera view...")
+        
+        // Configure AR session for geo tracking if available
+        if #available(iOS 14.0, *) {
+            print("📱 iOS 14+ detected, attempting geo tracking setup...")
+            context.coordinator.setupGeoTracking(arView: arView)
+        } else {
+            // Fallback to world tracking for iOS 13
+            print("📱 iOS 13 detected, using world tracking...")
+            let configuration = ARWorldTrackingConfiguration()
+            configuration.planeDetection = [.horizontal, .vertical]
+            configuration.environmentTexturing = .automatic
+            arView.session.run(configuration)
+            print("✅ World tracking configuration started")
+        }
+        
         isSessionRunning = true
-        
+        print("✅ AR session marked as running")
         return arView
     }
     
@@ -33,44 +49,141 @@ struct ARCameraView: UIViewRepresentable {
     
     class Coordinator: NSObject, ARSCNViewDelegate, ARSessionDelegate {
         var parent: ARCameraView
-        private var lastAnalysisTime: Date = Date()
-        private let analysisInterval: TimeInterval = 1.0 // Analyze every second
+        private var geoAnchorService: ARGeoAnchorService?
+        private var landmarkNodes: [UUID: SCNNode] = [:]
         
         init(_ parent: ARCameraView) {
             self.parent = parent
+            super.init()
+            
+            if #available(iOS 14.0, *) {
+                self.geoAnchorService = ARGeoAnchorService()
+            }
+        }
+        
+        // MARK: - Setup Methods
+        
+        @available(iOS 14.0, *)
+        func setupGeoTracking(arView: ARSCNView) {
+            print("🌍 Configuring geo tracking...")
+            geoAnchorService?.configure(with: arView.session)
+            
+            // Check if geo tracking is available before starting
+            if geoAnchorService?.isGeoTrackingAvailable == true {
+                print("✅ Geo tracking available, starting...")
+                geoAnchorService?.startGeoTracking()
+            } else {
+                print("⚠️ Geo tracking not available, falling back to world tracking...")
+                let configuration = ARWorldTrackingConfiguration()
+                configuration.planeDetection = [.horizontal, .vertical]
+                configuration.environmentTexturing = .automatic
+                arView.session.run(configuration)
+            }
         }
         
         // MARK: - ARSCNViewDelegate
         
         func renderer(_ renderer: SCNSceneRenderer, didAdd node: SCNNode, for anchor: ARAnchor) {
-            // Handle new anchors if needed
+            if #available(iOS 14.0, *), let geoAnchor = anchor as? ARGeoAnchor {
+                handleGeoAnchor(node: node, geoAnchor: geoAnchor)
+        } else {
+            // For non-geo anchors, we can't reliably get the landmark name
+            // since anchor.name is read-only and we can't set it
+            print("⚠️ Non-geo anchor detected but no name mapping available")
+        }
         }
         
         func renderer(_ renderer: SCNSceneRenderer, willRenderScene scene: SCNScene, atTime time: TimeInterval) {
-            // Capture frame for analysis
-            guard let arView = renderer as? ARSCNView else { return }
-            
-            let currentTime = Date()
-            if currentTime.timeIntervalSince(lastAnalysisTime) >= analysisInterval {
-                lastAnalysisTime = currentTime
-                captureFrameForAnalysis(arView: arView)
+            // Update landmark visibility based on GPS detection
+            Task { @MainActor in
+                updateLandmarkVisibility()
             }
         }
         
-        private func captureFrameForAnalysis(arView: ARSCNView) {
-            guard let pixelBuffer = arView.session.currentFrame?.capturedImage else { return }
-            
-            let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
-            let context = CIContext()
-            
-            guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else { return }
-            
-            let uiImage = UIImage(cgImage: cgImage)
-            
-            // Analyze the captured frame
-            Task { @MainActor in
-                parent.recognitionService.analyzeImage(uiImage)
+        @available(iOS 14.0, *)
+        private func handleGeoAnchor(node: SCNNode, geoAnchor: ARGeoAnchor) {
+            // Get landmark name from our service's mapping
+            guard let landmarkName = geoAnchorService?.getLandmarkName(for: geoAnchor.identifier),
+                  let landmark = MontrealLandmark.landmarks.first(where: { $0.name == landmarkName }) else {
+                return
             }
+            
+            let labelNode = createLandmarkLabel(for: landmark)
+            node.addChildNode(labelNode)
+            landmarkNodes[landmark.id] = node
+            
+            print("📍 Added AR content for \(landmark.name)")
+        }
+        
+        private func handleLandmarkAnchor(node: SCNNode, anchorName: String) {
+            guard let landmark = MontrealLandmark.landmarks.first(where: { $0.name == anchorName }) else {
+                return
+            }
+            
+            let labelNode = createLandmarkLabel(for: landmark)
+            node.addChildNode(labelNode)
+            landmarkNodes[landmark.id] = node
+        }
+        
+        private func updateLandmarkVisibility() {
+            let detectedLandmarks = parent.gpsDetectionService.detectedLandmarks
+            
+            // Add geo anchors for newly detected landmarks
+            for detection in detectedLandmarks {
+                if landmarkNodes[detection.landmark.id] == nil {
+                    if #available(iOS 14.0, *) {
+                        geoAnchorService?.addGeoAnchor(for: detection.landmark)
+                    }
+                }
+            }
+            
+            // Update existing nodes with detection info
+            for detection in detectedLandmarks {
+                if let node = landmarkNodes[detection.landmark.id] {
+                    updateLandmarkNode(node: node, detection: detection)
+                }
+            }
+        }
+        
+        private func createLandmarkLabel(for landmark: MontrealLandmark) -> SCNNode {
+            // Create text geometry
+            let text = SCNText(string: landmark.name, extrusionDepth: 0.1)
+            text.font = UIFont.systemFont(ofSize: 2.0, weight: .bold)
+            text.firstMaterial?.diffuse.contents = UIColor.white
+            text.firstMaterial?.specular.contents = UIColor.white
+            text.alignmentMode = CATextLayerAlignmentMode.center.rawValue
+            
+            // Create text node
+            let textNode = SCNNode(geometry: text)
+            textNode.scale = SCNVector3(0.02, 0.02, 0.02)
+            textNode.position = SCNVector3(0, 2, 0) // Position above the landmark
+            
+            // Create background plane
+            let plane = SCNPlane(width: 4, height: 1)
+            plane.firstMaterial?.diffuse.contents = UIColor.black.withAlphaComponent(0.8)
+            plane.cornerRadius = 0.2
+            
+            let backgroundNode = SCNNode(geometry: plane)
+            backgroundNode.position = SCNVector3(0, 1.5, -0.1)
+            
+            // Container node
+            let containerNode = SCNNode()
+            containerNode.addChildNode(backgroundNode)
+            containerNode.addChildNode(textNode)
+            
+            // Make it always face the camera
+            let billboardConstraint = SCNBillboardConstraint()
+            billboardConstraint.freeAxes = [.Y]
+            containerNode.constraints = [billboardConstraint]
+            
+            return containerNode
+        }
+        
+        private func updateLandmarkNode(node: SCNNode, detection: GPSDetectedLandmark) {
+            // Update opacity based on confidence
+            node.opacity = CGFloat(detection.confidence)
+            
+            // You could add more dynamic updates here, like distance info
         }
         
         // MARK: - ARSessionDelegate
@@ -86,42 +199,62 @@ struct ARCameraView: UIViewRepresentable {
         func sessionInterruptionEnded(_ session: ARSession) {
             print("AR Session interruption ended")
         }
+        
+        @available(iOS 14.0, *)
+        func session(_ session: ARSession, didChange geoTrackingStatus: ARGeoTrackingStatus) {
+            geoAnchorService?.updateGeoTrackingStatus(geoTrackingStatus)
+        }
     }
 }
 
 // MARK: - AR Camera View with Overlay
 
 struct ARCameraViewWithOverlay: View {
-    @StateObject private var recognitionService = MonumentRecognitionService()
+    @StateObject private var locationService = LocationService()
+    @StateObject private var motionService = MotionService()
+    @StateObject private var gpsDetectionService: GPSBasedDetectionService
     @State private var isSessionRunning = false
     @State private var showLandmarkInfo = false
     @State private var selectedLandmark: MontrealLandmark?
     @Environment(\.dismiss) private var dismiss
     
+    init() {
+        let locationService = LocationService()
+        let motionService = MotionService()
+        let gpsDetectionService = GPSBasedDetectionService(
+            locationService: locationService,
+            motionService: motionService
+        )
+        
+        self._locationService = StateObject(wrappedValue: locationService)
+        self._motionService = StateObject(wrappedValue: motionService)
+        self._gpsDetectionService = StateObject(wrappedValue: gpsDetectionService)
+    }
+    
     var body: some View {
         ZStack {
             // AR Camera View
-            ARCameraView(recognitionService: recognitionService, isSessionRunning: $isSessionRunning)
+            ARCameraView(gpsDetectionService: gpsDetectionService, isSessionRunning: $isSessionRunning)
                 .ignoresSafeArea()
             
             // Overlay for detected landmarks
-            if !recognitionService.detectedLandmarks.isEmpty {
-                ForEach(recognitionService.detectedLandmarks) { detectedLandmark in
-                    LandmarkOverlayView(detectedLandmark: detectedLandmark) {
+            if !gpsDetectionService.detectedLandmarks.isEmpty {
+                ForEach(gpsDetectionService.detectedLandmarks) { detectedLandmark in
+                    GPSLandmarkOverlayView(detectedLandmark: detectedLandmark) {
                         selectedLandmark = detectedLandmark.landmark
                         showLandmarkInfo = true
                     }
                 }
             }
             
-            // Analysis indicator
-            if recognitionService.isAnalyzing {
+            // Detection indicator
+            if gpsDetectionService.isDetecting {
                 VStack {
                     Spacer()
                     HStack {
                         ProgressView()
                             .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                        Text("Analyzing...")
+                        Text("GPS Detecting...")
                             .foregroundColor(.white)
                             .font(.caption)
                     }
@@ -156,15 +289,36 @@ struct ARCameraViewWithOverlay: View {
                     
                     Spacer()
                     
-                    // Detection count
+                    // Detection count and status
                     VStack {
-                        Text("Detected")
+                        Text("GPS Detected")
                             .font(.caption)
                             .foregroundColor(.white)
-                        Text("\(recognitionService.detectedLandmarks.count)")
+                        Text("\(gpsDetectionService.detectedLandmarks.count)")
                             .font(.title2)
                             .fontWeight(.bold)
                             .foregroundColor(.white)
+                        
+                        // Location status
+                        if locationService.isLocationAvailable {
+                            HStack(spacing: 4) {
+                                Image(systemName: "location.fill")
+                                    .foregroundColor(.green)
+                                    .font(.caption2)
+                                Text("GPS")
+                                    .font(.caption2)
+                                    .foregroundColor(.green)
+                            }
+                        } else {
+                            HStack(spacing: 4) {
+                                Image(systemName: "location.slash")
+                                    .foregroundColor(.red)
+                                    .font(.caption2)
+                                Text("No GPS")
+                                    .font(.caption2)
+                                    .foregroundColor(.red)
+                            }
+                        }
                     }
                     .padding()
                     .background(Color.black.opacity(0.7))
@@ -180,15 +334,66 @@ struct ARCameraViewWithOverlay: View {
             }
         }
         .onAppear {
-            // For demonstration, simulate some detections
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                recognitionService.simulateDetection()
-            }
+            // Start GPS-based detection
+            gpsDetectionService.startDetection()
+        }
+        .onDisappear {
+            // Stop GPS-based detection
+            gpsDetectionService.stopDetection()
         }
     }
 }
 
-// MARK: - Landmark Overlay View
+// MARK: - GPS Landmark Overlay View
+
+struct GPSLandmarkOverlayView: View {
+    let detectedLandmark: GPSDetectedLandmark
+    let onTap: () -> Void
+    
+    var body: some View {
+        VStack {
+            Spacer()
+            
+            HStack {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(detectedLandmark.landmark.name)
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .fontWeight(.bold)
+                    
+                    HStack {
+                        Text("📍 \(detectedLandmark.formattedDistance)")
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.8))
+                        
+                        Text("🧭 \(detectedLandmark.formattedBearing)")
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.8))
+                    }
+                    
+                    Text("Confidence: \(Int(detectedLandmark.confidence * 100))%")
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.8))
+                    
+                    Text("Tap for details")
+                        .font(.caption2)
+                        .foregroundColor(.yellow)
+                }
+                .padding()
+                .background(Color.black.opacity(0.8))
+                .cornerRadius(10)
+                
+                Spacer()
+            }
+            .padding()
+        }
+        .onTapGesture {
+            onTap()
+        }
+    }
+}
+
+// MARK: - Legacy Landmark Overlay View (for backward compatibility)
 
 struct LandmarkOverlayView: View {
     let detectedLandmark: DetectedLandmark
