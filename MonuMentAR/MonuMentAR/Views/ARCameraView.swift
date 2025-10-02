@@ -96,6 +96,7 @@ struct ARCameraViewWithOverlay: View {
     @State private var isSessionRunning = false
     @State private var showLandmarkInfo = false
     @State private var selectedLandmark: MontrealLandmark?
+    @Environment(\.dismiss) private var dismiss
     
     var body: some View {
         ZStack {
@@ -131,10 +132,31 @@ struct ARCameraViewWithOverlay: View {
                 }
             }
             
-            // Detection count
+            // Back button and Detection count
             VStack {
                 HStack {
+                    // Back button
+                    Button(action: {
+                        dismiss()
+                    }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "chevron.left")
+                                .font(.title3)
+                                .fontWeight(.semibold)
+                            Text("Back")
+                                .font(.headline)
+                                .fontWeight(.semibold)
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(Color.black.opacity(0.7))
+                        .cornerRadius(25)
+                    }
+                    
                     Spacer()
+                    
+                    // Detection count
                     VStack {
                         Text("Detected")
                             .font(.caption)
