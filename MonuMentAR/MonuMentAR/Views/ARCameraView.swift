@@ -51,6 +51,8 @@ struct ARCameraView: UIViewRepresentable {
         var parent: ARCameraView
         private var geoAnchorService: ARGeoAnchorService?
         private var landmarkNodes: [UUID: SCNNode] = [:]
+        private var discoveredLandmarks: Set<UUID> = [] // Track first-time discoveries
+        private var celebrationNodes: [UUID: SCNNode] = [:] // Track celebration effects
         
         init(_ parent: ARCameraView) {
             self.parent = parent
@@ -146,30 +148,35 @@ struct ARCameraView: UIViewRepresentable {
         }
         
         private func createLandmarkLabel(for landmark: MontrealLandmark) -> SCNNode {
-            // Create text geometry
-            let text = SCNText(string: landmark.name, extrusionDepth: 0.1)
-            text.font = UIFont.systemFont(ofSize: 2.0, weight: .bold)
-            text.firstMaterial?.diffuse.contents = UIColor.white
-            text.firstMaterial?.specular.contents = UIColor.white
-            text.alignmentMode = CATextLayerAlignmentMode.center.rawValue
+            // Check if this is a first-time discovery
+            let isFirstDiscovery = !discoveredLandmarks.contains(landmark.id)
+            if isFirstDiscovery {
+                discoveredLandmarks.insert(landmark.id)
+            }
             
-            // Create text node
-            let textNode = SCNNode(geometry: text)
-            textNode.scale = SCNVector3(0.02, 0.02, 0.02)
-            textNode.position = SCNVector3(0, 2, 0) // Position above the landmark
-            
-            // Create background plane
-            let plane = SCNPlane(width: 4, height: 1)
-            plane.firstMaterial?.diffuse.contents = UIColor.black.withAlphaComponent(0.8)
-            plane.cornerRadius = 0.2
-            
-            let backgroundNode = SCNNode(geometry: plane)
-            backgroundNode.position = SCNVector3(0, 1.5, -0.1)
-            
-            // Container node
+            // Create main container
             let containerNode = SCNNode()
-            containerNode.addChildNode(backgroundNode)
-            containerNode.addChildNode(textNode)
+            
+            // Create the landmark display
+            let landmarkDisplay = createLandmarkDisplay(for: landmark)
+            containerNode.addChildNode(landmarkDisplay)
+            
+            // Add cool AR effects
+            let effectsNode = createAREffects(for: landmark, isFirstDiscovery: isFirstDiscovery)
+            containerNode.addChildNode(effectsNode)
+            
+            // Add discovery celebration if first time
+            if isFirstDiscovery {
+                let celebrationNode = createDiscoveryCelebration(for: landmark)
+                containerNode.addChildNode(celebrationNode)
+                celebrationNodes[landmark.id] = celebrationNode
+                
+                // Remove celebration after animation
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                    celebrationNode.removeFromParentNode()
+                    self.celebrationNodes.removeValue(forKey: landmark.id)
+                }
+            }
             
             // Make it always face the camera
             let billboardConstraint = SCNBillboardConstraint()
@@ -177,6 +184,285 @@ struct ARCameraView: UIViewRepresentable {
             containerNode.constraints = [billboardConstraint]
             
             return containerNode
+        }
+        
+        private func createLandmarkDisplay(for landmark: MontrealLandmark) -> SCNNode {
+            let displayNode = SCNNode()
+            
+            // Create text geometry with glow effect
+            let text = SCNText(string: landmark.name, extrusionDepth: 0.15)
+            text.font = UIFont.systemFont(ofSize: 2.0, weight: .bold)
+            text.alignmentMode = CATextLayerAlignmentMode.center.rawValue
+            
+            // Add materials for glow effect
+            let textMaterial = SCNMaterial()
+            textMaterial.diffuse.contents = UIColor.white
+            textMaterial.emission.contents = UIColor.cyan.withAlphaComponent(0.3)
+            textMaterial.specular.contents = UIColor.white
+            text.materials = [textMaterial]
+            
+            // Create text node
+            let textNode = SCNNode(geometry: text)
+            textNode.scale = SCNVector3(0.02, 0.02, 0.02)
+            textNode.position = SCNVector3(0, 2.5, 0)
+            
+            // Add pulsing animation to text
+            let pulseAnimation = CABasicAnimation(keyPath: "scale")
+            pulseAnimation.fromValue = SCNVector3(0.02, 0.02, 0.02)
+            pulseAnimation.toValue = SCNVector3(0.025, 0.025, 0.025)
+            pulseAnimation.duration = 2.0
+            pulseAnimation.autoreverses = true
+            pulseAnimation.repeatCount = .infinity
+            textNode.addAnimation(pulseAnimation, forKey: "pulse")
+            
+            // Create enhanced background with gradient
+            let backgroundPlane = SCNPlane(width: 5, height: 1.2)
+            let backgroundMaterial = SCNMaterial()
+            backgroundMaterial.diffuse.contents = createGradientImage()
+            backgroundMaterial.transparency = 0.9
+            backgroundPlane.materials = [backgroundMaterial]
+            backgroundPlane.cornerRadius = 0.3
+            
+            let backgroundNode = SCNNode(geometry: backgroundPlane)
+            backgroundNode.position = SCNVector3(0, 2.0, -0.1)
+            
+            // Create info text
+            let infoText = SCNText(string: landmark.architecturalStyle, extrusionDepth: 0.05)
+            infoText.font = UIFont.systemFont(ofSize: 1.0, weight: .medium)
+            infoText.alignmentMode = CATextLayerAlignmentMode.center.rawValue
+            
+            let infoMaterial = SCNMaterial()
+            infoMaterial.diffuse.contents = UIColor.lightGray
+            infoText.materials = [infoMaterial]
+            
+            let infoNode = SCNNode(geometry: infoText)
+            infoNode.scale = SCNVector3(0.015, 0.015, 0.015)
+            infoNode.position = SCNVector3(0, 1.5, 0)
+            
+            displayNode.addChildNode(backgroundNode)
+            displayNode.addChildNode(textNode)
+            displayNode.addChildNode(infoNode)
+            
+            return displayNode
+        }
+        
+        private func createAREffects(for landmark: MontrealLandmark, isFirstDiscovery: Bool) -> SCNNode {
+            let effectsNode = SCNNode()
+            
+            // Create floating particles around the landmark
+            let particleSystem = createParticleSystem(for: landmark)
+            let particleNode = SCNNode()
+            particleNode.addParticleSystem(particleSystem)
+            particleNode.position = SCNVector3(0, 1, 0)
+            effectsNode.addChildNode(particleNode)
+            
+            // Create rotating ring effect
+            let ringNode = createRotatingRing(for: landmark)
+            effectsNode.addChildNode(ringNode)
+            
+            // Create beacon light effect
+            let beaconNode = createBeaconLight(for: landmark)
+            effectsNode.addChildNode(beaconNode)
+            
+            return effectsNode
+        }
+        
+        private func createParticleSystem(for landmark: MontrealLandmark) -> SCNParticleSystem {
+            let particleSystem = SCNParticleSystem()
+            
+            // Configure particles based on landmark type
+            let landmarkColor = getLandmarkColor(for: landmark)
+            
+            particleSystem.birthRate = 20
+            particleSystem.particleLifeSpan = 3.0
+            particleSystem.particleSize = 0.05
+            particleSystem.particleColor = landmarkColor
+            
+            // Set emission properties
+            particleSystem.emissionDuration = 0
+            particleSystem.emitterShape = SCNSphere(radius: 0.5)
+            
+            // Set particle behavior
+            particleSystem.particleVelocity = 0.2
+            particleSystem.particleVelocityVariation = 0.1
+            particleSystem.spreadingAngle = 45
+            
+            // Add some sparkle
+            particleSystem.particleImage = createSparkleImage()
+            
+            return particleSystem
+        }
+        
+        private func createRotatingRing(for landmark: MontrealLandmark) -> SCNNode {
+            let ringGeometry = SCNTorus(ringRadius: 1.0, pipeRadius: 0.02)
+            let ringMaterial = SCNMaterial()
+            ringMaterial.diffuse.contents = getLandmarkColor(for: landmark)
+            ringMaterial.emission.contents = getLandmarkColor(for: landmark).withAlphaComponent(0.5)
+            ringGeometry.materials = [ringMaterial]
+            
+            let ringNode = SCNNode(geometry: ringGeometry)
+            ringNode.position = SCNVector3(0, 0.5, 0)
+            
+            // Add rotation animation
+            let rotationAnimation = CABasicAnimation(keyPath: "rotation")
+            rotationAnimation.fromValue = SCNVector4(0, 1, 0, 0)
+            rotationAnimation.toValue = SCNVector4(0, 1, 0, Float.pi * 2)
+            rotationAnimation.duration = 4.0
+            rotationAnimation.repeatCount = .infinity
+            ringNode.addAnimation(rotationAnimation, forKey: "rotation")
+            
+            return ringNode
+        }
+        
+        private func createBeaconLight(for landmark: MontrealLandmark) -> SCNNode {
+            let lightNode = SCNNode()
+            let light = SCNLight()
+            light.type = .spot
+            light.color = getLandmarkColor(for: landmark)
+            light.intensity = 500
+            light.spotInnerAngle = 30
+            light.spotOuterAngle = 60
+            lightNode.light = light
+            lightNode.position = SCNVector3(0, 3, 0)
+            lightNode.eulerAngles = SCNVector3(-Float.pi/2, 0, 0)
+            
+            // Add pulsing animation to light
+            let pulseAnimation = CABasicAnimation(keyPath: "light.intensity")
+            pulseAnimation.fromValue = 200
+            pulseAnimation.toValue = 800
+            pulseAnimation.duration = 1.5
+            pulseAnimation.autoreverses = true
+            pulseAnimation.repeatCount = .infinity
+            lightNode.addAnimation(pulseAnimation, forKey: "lightPulse")
+            
+            return lightNode
+        }
+        
+        private func createDiscoveryCelebration(for landmark: MontrealLandmark) -> SCNNode {
+            let celebrationNode = SCNNode()
+            
+            // Create burst particle effect
+            let burstParticles = SCNParticleSystem()
+            burstParticles.birthRate = 100
+            burstParticles.particleLifeSpan = 2.0
+            burstParticles.particleSize = 0.1
+            burstParticles.particleColor = UIColor(red: 1.0, green: 0.84, blue: 0.0, alpha: 1.0) // Gold color
+            burstParticles.emissionDuration = 0.5
+            burstParticles.particleVelocity = 2.0
+            burstParticles.particleVelocityVariation = 1.0
+            burstParticles.spreadingAngle = 180
+            burstParticles.particleImage = createStarImage()
+            
+            let burstNode = SCNNode()
+            burstNode.addParticleSystem(burstParticles)
+            burstNode.position = SCNVector3(0, 2, 0)
+            celebrationNode.addChildNode(burstNode)
+            
+            // Create "DISCOVERED!" text
+            let discoveryText = SCNText(string: "DISCOVERED!", extrusionDepth: 0.1)
+            discoveryText.font = UIFont.systemFont(ofSize: 1.5, weight: .black)
+            discoveryText.alignmentMode = CATextLayerAlignmentMode.center.rawValue
+            
+            let discoveryMaterial = SCNMaterial()
+            discoveryMaterial.diffuse.contents = UIColor(red: 1.0, green: 0.84, blue: 0.0, alpha: 1.0) // Gold color
+            discoveryMaterial.emission.contents = UIColor.orange
+            discoveryText.materials = [discoveryMaterial]
+            
+            let discoveryTextNode = SCNNode(geometry: discoveryText)
+            discoveryTextNode.scale = SCNVector3(0.03, 0.03, 0.03)
+            discoveryTextNode.position = SCNVector3(0, 4, 0)
+            
+            // Add bounce animation
+            let bounceAnimation = CAKeyframeAnimation(keyPath: "position.y")
+            bounceAnimation.values = [4, 4.5, 4, 4.3, 4, 4.1, 4]
+            bounceAnimation.duration = 1.5
+            bounceAnimation.repeatCount = 2
+            discoveryTextNode.addAnimation(bounceAnimation, forKey: "bounce")
+            
+            // Add fade out animation
+            let fadeAnimation = CABasicAnimation(keyPath: "opacity")
+            fadeAnimation.fromValue = 1.0
+            fadeAnimation.toValue = 0.0
+            fadeAnimation.beginTime = CACurrentMediaTime() + 2.0
+            fadeAnimation.duration = 1.0
+            discoveryTextNode.addAnimation(fadeAnimation, forKey: "fadeOut")
+            
+            celebrationNode.addChildNode(discoveryTextNode)
+            
+            return celebrationNode
+        }
+        
+        // Helper functions for visual effects
+        private func getLandmarkColor(for landmark: MontrealLandmark) -> UIColor {
+            switch landmark.name {
+            case "Notre-Dame Basilica":
+                return UIColor.blue
+            case "Olympic Stadium & Tower":
+                return UIColor.red
+            case "Mount Royal Cross":
+                return UIColor.purple
+            case "Old Port Clock Tower":
+                return UIColor.orange
+            case "Saint Joseph's Oratory":
+                return UIColor.green
+            case "Collège de La Salle":
+                return UIColor.cyan
+            default:
+                return UIColor.white
+            }
+        }
+        
+        private func createGradientImage() -> UIImage {
+            let size = CGSize(width: 100, height: 100)
+            let renderer = UIGraphicsImageRenderer(size: size)
+            return renderer.image { context in
+                let colors = [UIColor.black.withAlphaComponent(0.8).cgColor,
+                             UIColor.blue.withAlphaComponent(0.3).cgColor]
+                let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                        colors: colors as CFArray,
+                                        locations: nil)!
+                context.cgContext.drawLinearGradient(gradient,
+                                                   start: CGPoint(x: 0, y: 0),
+                                                   end: CGPoint(x: size.width, y: size.height),
+                                                   options: [])
+            }
+        }
+        
+        private func createSparkleImage() -> UIImage {
+            let size = CGSize(width: 20, height: 20)
+            let renderer = UIGraphicsImageRenderer(size: size)
+            return renderer.image { context in
+                context.cgContext.setFillColor(UIColor.white.cgColor)
+                context.cgContext.fillEllipse(in: CGRect(origin: .zero, size: size))
+            }
+        }
+        
+        private func createStarImage() -> UIImage {
+            let size = CGSize(width: 20, height: 20)
+            let renderer = UIGraphicsImageRenderer(size: size)
+            return renderer.image { context in
+                let path = UIBezierPath()
+                let center = CGPoint(x: size.width/2, y: size.height/2)
+                let radius: CGFloat = 8
+                
+                for i in 0..<10 {
+                    let angle = CGFloat(i) * .pi / 5
+                    let r = (i % 2 == 0) ? radius : radius * 0.5
+                    let x = center.x + r * cos(angle - .pi/2)
+                    let y = center.y + r * sin(angle - .pi/2)
+                    
+                    if i == 0 {
+                        path.move(to: CGPoint(x: x, y: y))
+                    } else {
+                        path.addLine(to: CGPoint(x: x, y: y))
+                    }
+                }
+                path.close()
+                
+                context.cgContext.setFillColor(UIColor(red: 1.0, green: 0.84, blue: 0.0, alpha: 1.0).cgColor) // Gold color
+                context.cgContext.addPath(path.cgPath)
+                context.cgContext.fillPath()
+            }
         }
         
         private func updateLandmarkNode(node: SCNNode, detection: GPSDetectedLandmark) {
