@@ -1,0 +1,30 @@
+# Core ML Training Requirements
+# Install with: pip install -r requirements.txt
+
+# Core ML and model conversion
+coremltools>=7.0
+tensorflow>=2.13.0
+tensorflow-macos>=2.13.0  # For Apple Silicon Macs
+
+# Image processing and data handling
+Pillow>=9.0.0
+numpy>=1.21.0
+opencv-python>=4.5.0
+
+# Data collection and web scraping
+requests>=2.25.0
+beautifulsoup4>=4.9.0
+flickrapi>=2.4.0
+
+# Visualization and monitoring
+matplotlib>=3.3.0
+seaborn>=0.11.0
+tqdm>=4.60.0
+
+# Jupyter notebook support (optional)
+jupyter>=1.0.0
+ipykernel>=6.0.0
+
+# Model evaluation
+scikit-learn>=1.0.0
+

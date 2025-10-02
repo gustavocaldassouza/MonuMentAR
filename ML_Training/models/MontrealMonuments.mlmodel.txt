@@ -1,0 +1,11 @@
+This is a placeholder for the Core ML model.
+            
+To create a real model:
+1. Collect training images for Montreal landmarks
+2. Run this script with actual training data
+3. The script will generate a proper MontrealMonuments.mlmodel file
+
+For now, you can test the integration by:
+1. Creating a simple Core ML model using Create ML in Xcode
+2. Or using a pre-trained model and adapting it
+3. Make sure the model outputs match the landmark identifiers in your Swift code
